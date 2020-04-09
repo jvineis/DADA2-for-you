@@ -28,36 +28,51 @@ Reinventing the wheel of DADA2 analysis for the Vineis mind and anyone else who 
     plotQualityProfile(fnFs[1:2])
     plotQualityProfile(fnRs[1:2])
 
+### create the file names and paths that you can assign to the "filterAndTrim" command
 
-filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
-filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
-names(filtFs) <- sample.names
-names(filtRs) <- sample.names
+    filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+    filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+    names(filtFs) <- sample.names
+    names(filtRs) <- sample.names
 
-out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(150,150),
+### Now you can filter athe reads using the DADA2 command "filterAndTrim".  You should trim based on the quality plots that you have carefully examined above and also based on the lenght that you need to acheive merging of the paired reads.  If you trim too much, longer amplicons will fail to merge
+
+    out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(150,150),
                      maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
                      compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
 
-errF <- learnErrors(filtFs, multithread=TRUE)
-errR <- learnErrors(filtRs, multithread=TRUE)
-dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
-dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
-mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+### Run the magical DADA2 error profiling - you might want to do this for each sequencing run that you have, especially if there are poor looking quality profiles.
 
-seqtab <- makeSequenceTable(mergers)
-dim(seqtab)
-table(nchar(getSequences(seqtab)))
+    errF <- learnErrors(filtFs, multithread=TRUE)
+    errR <- learnErrors(filtRs, multithread=TRUE)
+    dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
+    dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
+    mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
 
-seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
-dim(seqtab.nochim)
-sum(seqtab.nochim)/sum(seqtab)
+### Now you can build an ASV table
+    
+    seqtab <- makeSequenceTable(mergers)
 
+### If you want to check the number of samples and ASVs you have, you can check that here.. but you don't have to
+      
+    dim(seqtab)
+    table(nchar(getSequences(seqtab)))
 
-getN <- function(x) sum(getUniques(x))
-track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
-# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
-colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
-rownames(track) <- sample.names
-head(track)
+### Remove the chimeric sequences and check the amount of seqs that were chimeric.  
+
+    seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+    dim(seqtab.nochim)
+    sum(seqtab.nochim)/sum(seqtab)
+
+### Summary of the data that you can write to a file if you like to keep track of that sort of thing.. I find it very handy
+
+    getN <- function(x) sum(getUniques(x))
+    track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+
+### If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+
+    colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+    rownames(track) <- sample.names
+    head(track)
 
     
