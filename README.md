@@ -74,5 +74,92 @@ Reinventing the wheel of DADA2 analysis for the Vineis mind and anyone else who 
     colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
     rownames(track) <- sample.names
     head(track)
+    
+### An example of the output
+    
+    input filtered denoisedF denoisedR merged nonchim
+    J3-3-control 36313    35145     34345     34575  27631    9487
+    J3-3-Red     38858    37508     35930     36803  27930   10851
+
+### In the case that you have distinct error structures between runs or for whatever reason, you want to run DADA2 separately for a separate set of data, start by creating a table of sequences.  skip this step if you don't need to run separate DADA2 analyses
+    
+    seqtab = makeSequenceTable(mergers)
+
+### save the table as an .rds file - Then return to the top and restart a DADA2 analysis for another set of samples.
+
+    saveRDS(seqtab, "~/Dropbox/TRAP-COMPETITION/COMPETITION-DILUTION-EXPERIMENTS/seqtab-comp-dilution.rds")
+
+##### then I would go ahead and save the second DADA2 run after the analysis is complete for the second run and
+
+    saveRDS(seqtab, "~/Dropbox/TRAP-COMPETITION/ORIGINAL-CULTIVATION/seqtab-original.rds")
+
+### Here is an example of how to merge the two runs
+    st1 = readRDS("~/Dropbox/TRAP-COMPETITION/COMPETITION-DILUTION-EXPERIMENTS/seqtab-comp-dilution.rds")
+    st2 = readRDS("~/Dropbox/TRAP-COMPETITION/ORIGINAL-CULTIVATION/seqtab-original.rds")
+    st.all = mergeSequenceTables(st1, st2)
+    seqtab <- removeBimeraDenovo(st.all, method="consensus", multithread=TRUE)
+    
+### Whether or not you had a single or multiple DADA2 runs, now its time to write the ASV matrix containing only non-chimeric quality ASVs to a file
+
+    write.table(seqtab, "~/Dropbox/TRAP-COMPETITION/seqtab-original-comp-dil-combined-runs.txt", sep = "\t")
+
+### Then you need to fix the output using some type of txt editor so that the rows are sequences and the colums are samples..   Its just a matter of transpoosing the matrix and adding the "sample" as the column1 header. like this.
+
+    sample 15cm_S_Alt_2_1  15cm_S_Alt_2_2  15cm_S_Alt_2_3
+    ACTTGA 0  26  33
+    ACTTAA 0  100 30
+    AACTGG 25 33  26
+
+### Save it as a text file called dada2-t-count-table.txt, then use this handy script
+    
+    python ~/scripts/create-fasta-from-seqs.py -n dada2-t-count-table.txt -fa dada2-fasta.fa -o DADA2-MATRIX.txt
+
+##### which produces a count table with simple names instead of the asv as the identifier and a fasta file that you can use to identify the taxonomy
+
+## I ran vsearch on this file to generate taxonmy like this in the terminal
+
+    vsearch --usearch_global dada2-fasta.fa --db ~/scripts/databas/silva119.fa --blast6out NODE-HITS.txt --id 0.6
+### Then I ran the wonderful script below in the terminal
+
+    python ~/scripts/mu-dada2-phyloseq-creator.py -hits NODE-HITS.txt -tax_ref ~/scripts/databas/silva_fix.tax -dada2 DADA2-MATRIX.txt -fa dada2-fasta.fa
+
+## which creates the PHYLOSEQ-TAX.txt and PHYLOSEQ-MATRIX.txt that you will use below
+library(phyloseq)
+
+mat = read.table("~/Dropbox/TRAP-COMPETITION/PHYLOSEQ-MATRIX.txt", header = TRUE, sep = "\t", row.names = 1)
+tax = read.table("~/Dropbox/TRAP-COMPETITION/PHYLOSEQ-TAX.txt", header = TRUE, sep = ";", row.names = 1)
+
+mat = as.matrix(mat)
+tax = as.matrix(tax)
+
+OTU = otu_table(mat, taxa_are_rows = TRUE)
+TAX = tax_table(tax)
+
+physeq = phyloseq(OTU,TAX)
+
+per = transform_sample_counts(physeq, function (x) x/sum(x)*100)
+
+lowabundnames = filter_taxa(per, function(x) mean(x) > 0.1) ## This filters out anything that has less than a mean of 0.2% relative abundance acrocss all samples
+per_abund = prune_taxa(lowabundnames, per)
+
+### Do any other filtering that you think should be required here.  
+
+### Write the taxa to a file, just because its handy to have
+    
+    write.table(tax_table(per_abund), "~/Dropbox/TRAP-COMPETITION/DADA2-TAX-meangreaterthanpoint1.txt", sep = '\t')
+
+### Write the matrix for further processing - e.g. build a heirarchical tree anvi'o display etc..
+
+    write.table(otu_table(per_abund), "~/Dropbox/TRAP-COMPETITION/DADA2-MATRIX-phyloseq-meangreaterthanpoint1.txt", sep = '\t')
+
+### READ in a table that contains the percent relative abundance of the crosses experiment and export a heirarchical tree that can be used by Anvi'o display
+
+    library(ape)
+    library(vegan)
+
+    dat = read.table("~/Dropbox/TRAP-COMPETITION/CROSSES-perabund-table.txt", header = TRUE, row.names = 1)
+    dist = vegdist(dat, method = "bray")
+    dclust = hclust(dist)
+    write.tree(as.phylo(dclust), "~/Dropbox/TRAP-COMPETITION/CROSSES-perabund-table.tre")
 
     
